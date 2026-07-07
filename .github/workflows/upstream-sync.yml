@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout target branch
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
@@ -31,16 +31,33 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Add upstream and fetch main
+      - name: Add upstream and fetch branches
         run: |
           git remote add upstream ${{ env.UPSTREAM_REPO }}
           git fetch upstream main
           git fetch origin ${{ env.TARGET_BRANCH }}
 
       - name: Merge upstream main
+        id: merge
+        continue-on-error: true
         run: |
           git checkout -B ${{ env.SYNC_BRANCH }} origin/${{ env.TARGET_BRANCH }}
           git merge upstream/main --no-edit --allow-unrelated-histories
+
+      - name: Show merge conflicts
+        if: steps.merge.outcome == 'failure'
+        run: |
+          echo "Merge conflicts detected:"
+          git status --short
+          echo ""
+          echo "Unmerged files:"
+          git diff --name-only --diff-filter=U
+
+      - name: Stop on merge conflicts
+        if: steps.merge.outcome == 'failure'
+        run: |
+          echo "Upstream merge has conflicts. Please resolve them manually on the sync branch."
+          exit 1
 
       - name: Check whether sync branch has changes
         id: changes
@@ -61,7 +78,7 @@ jobs:
           git remote set-url origin https://x-access-token:${SYNC_PAT}@github.com/${{ github.repository }}.git
           git push --force-with-lease origin HEAD:${{ env.SYNC_BRANCH }}
 
-      - name: Create or update pull request to main
+      - name: Create or reuse pull request to main
         if: steps.changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.SYNC_PAT }}
@@ -72,6 +89,8 @@ jobs:
           Source: https://github.com/Wei-Shaw/sub2api/tree/main
           Target: main
           Sync branch: sync/upstream-main
+
+          如果本次同步出现冲突，工作流会失败，需要人工处理冲突后再合并。
           EOF
 
           existing_pr=$(gh pr list \
