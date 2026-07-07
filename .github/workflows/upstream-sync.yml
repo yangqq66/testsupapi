@@ -1,4 +1,4 @@
-name: Sync Upstream Main To Test
+name: Sync Upstream Main To Main
 
 on:
   workflow_dispatch:
@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout target branch
+      - name: Checkout main branch
         uses: actions/checkout@v4
         with:
-          ref: test
+          ref: main
           fetch-depth: 0
 
       - name: Configure git
@@ -29,7 +29,7 @@ jobs:
         run: |
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git
           git fetch upstream main
-          git fetch origin test
+          git fetch origin main
 
       - name: Merge upstream main
         run: |
@@ -39,7 +39,7 @@ jobs:
       - name: Check whether branch has changes
         id: changes
         run: |
-          count=$(git rev-list --count origin/test..HEAD)
+          count=$(git rev-list --count origin/main..HEAD)
           echo "count=$count" >> "$GITHUB_OUTPUT"
           if [ "$count" = "0" ]; then
             echo "No upstream changes to sync."
@@ -50,20 +50,20 @@ jobs:
         run: |
           git push origin HEAD:sync/upstream-main-${{ github.run_number }}
 
-      - name: Create pull request to test
+      - name: Create pull request to main
         if: steps.changes.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > pr_body.md <<'EOF'
-          自动同步开源项目 upstream/main 到当前仓库 test 分支。
+          自动同步开源项目 upstream/main 到当前仓库 main 分支。
 
           Source: upstream/main
-          Target: test
+          Target: main
           EOF
 
           gh pr create \
-            --base test \
+            --base main \
             --head sync/upstream-main-${{ github.run_number }} \
-            --title "sync: merge upstream main into test" \
+            --title "sync: merge upstream main into main" \
             --body-file pr_body.md
