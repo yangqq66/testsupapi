@@ -33,7 +33,7 @@ jobs:
       - name: Merge upstream main
         run: |
           git checkout -b sync/upstream-main-${{ github.run_number }}
-          git merge upstream/main --no-edit
+          git merge upstream/main --no-edit --allow-unrelated-histories
 
       - name: Create pull request to main
         uses: peter-evans/create-pull-request@v6
