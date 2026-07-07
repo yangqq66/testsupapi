@@ -19,6 +19,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
 
       - name: Configure git
         run: |
@@ -47,18 +48,21 @@ jobs:
 
       - name: Push sync branch
         if: steps.changes.outputs.count != '0'
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
+          git remote set-url origin https://x-access-token:${SYNC_PAT}@github.com/${{ github.repository }}.git
           git push origin HEAD:sync/upstream-main-${{ github.run_number }}
 
       - name: Create pull request to main
         if: steps.changes.outputs.count != '0'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SYNC_PAT }}
         run: |
           cat > pr_body.md <<'EOF'
           自动同步开源项目 upstream/main 到当前仓库 main 分支。
 
-          Source: upstream/main
+          Source: https://github.com/Wei-Shaw/sub2api/tree/main
           Target: main
           EOF
 
