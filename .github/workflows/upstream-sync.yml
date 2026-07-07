@@ -17,7 +17,7 @@ jobs:
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: test
           fetch-depth: 0
 
       - name: Configure git
@@ -29,21 +29,41 @@ jobs:
         run: |
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git
           git fetch upstream main
+          git fetch origin test
 
       - name: Merge upstream main
         run: |
           git checkout -b sync/upstream-main-${{ github.run_number }}
           git merge upstream/main --no-edit --allow-unrelated-histories
 
-      - name: Create pull request to main
-        uses: peter-evans/create-pull-request@v6
-        with:
-          branch: sync/upstream-main-${{ github.run_number }}
-          base: test
-          title: "sync: merge upstream main into test"
-          body: |
-            自动同步开源项目 upstream/main 到当前仓库 test 分支。
+      - name: Check whether branch has changes
+        id: changes
+        run: |
+          count=$(git rev-list --count origin/test..HEAD)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" = "0" ]; then
+            echo "No upstream changes to sync."
+          fi
 
-            Source: upstream/main
-            Target: main
-          commit-message: "sync: merge upstream main into test"
+      - name: Push sync branch
+        if: steps.changes.outputs.count != '0'
+        run: |
+          git push origin HEAD:sync/upstream-main-${{ github.run_number }}
+
+      - name: Create pull request to test
+        if: steps.changes.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > pr_body.md <<'EOF'
+          自动同步开源项目 upstream/main 到当前仓库 test 分支。
+
+          Source: upstream/main
+          Target: test
+          EOF
+
+          gh pr create \
+            --base test \
+            --head sync/upstream-main-${{ github.run_number }} \
+            --title "sync: merge upstream main into test" \
+            --body-file pr_body.md
