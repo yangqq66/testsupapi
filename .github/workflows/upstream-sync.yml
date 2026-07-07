@@ -1,0 +1,49 @@
+name: Sync Upstream Main To Test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: test
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream and fetch main
+        run: |
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch upstream main
+
+      - name: Merge upstream main
+        run: |
+          git checkout -b sync/upstream-main-${{ github.run_number }}
+          git merge upstream/main --no-edit
+
+      - name: Create pull request to test
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: sync/upstream-main-${{ github.run_number }}
+          base: test
+          title: "sync: merge upstream main into test"
+          body: |
+            自动同步开源项目 upstream/main 到当前仓库 test 分支。
+
+            Source: upstream/main
+            Target: test
+          commit-message: "sync: merge upstream main into test"
