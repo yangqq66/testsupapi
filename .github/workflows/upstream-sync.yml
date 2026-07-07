@@ -9,6 +9,11 @@ permissions:
   contents: write
   pull-requests: write
 
+env:
+  UPSTREAM_REPO: https://github.com/Wei-Shaw/sub2api.git
+  TARGET_BRANCH: main
+  SYNC_BRANCH: sync/upstream-main
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -17,7 +22,7 @@ jobs:
       - name: Checkout main branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
           token: ${{ secrets.SYNC_PAT }}
 
@@ -28,34 +33,36 @@ jobs:
 
       - name: Add upstream and fetch main
         run: |
-          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git remote add upstream ${{ env.UPSTREAM_REPO }}
           git fetch upstream main
-          git fetch origin main
+          git fetch origin ${{ env.TARGET_BRANCH }}
 
       - name: Merge upstream main
         run: |
-          git checkout -b sync/upstream-main-${{ github.run_number }}
+          git checkout -B ${{ env.SYNC_BRANCH }} origin/${{ env.TARGET_BRANCH }}
           git merge upstream/main --no-edit --allow-unrelated-histories
 
-      - name: Check whether branch has changes
+      - name: Check whether sync branch has changes
         id: changes
         run: |
-          count=$(git rev-list --count origin/main..HEAD)
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          if [ "$count" = "0" ]; then
+          if git diff --quiet origin/${{ env.TARGET_BRANCH }}..HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No upstream changes to sync."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream changes detected."
           fi
 
       - name: Push sync branch
-        if: steps.changes.outputs.count != '0'
+        if: steps.changes.outputs.has_changes == 'true'
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
           git remote set-url origin https://x-access-token:${SYNC_PAT}@github.com/${{ github.repository }}.git
-          git push origin HEAD:sync/upstream-main-${{ github.run_number }}
+          git push --force-with-lease origin HEAD:${{ env.SYNC_BRANCH }}
 
-      - name: Create pull request to main
-        if: steps.changes.outputs.count != '0'
+      - name: Create or update pull request to main
+        if: steps.changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.SYNC_PAT }}
         run: |
@@ -64,10 +71,22 @@ jobs:
 
           Source: https://github.com/Wei-Shaw/sub2api/tree/main
           Target: main
+          Sync branch: sync/upstream-main
           EOF
 
-          gh pr create \
-            --base main \
-            --head sync/upstream-main-${{ github.run_number }} \
-            --title "sync: merge upstream main into main" \
-            --body-file pr_body.md
+          existing_pr=$(gh pr list \
+            --base "${{ env.TARGET_BRANCH }}" \
+            --head "${{ env.SYNC_BRANCH }}" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$existing_pr" ]; then
+            echo "Pull request already exists: #$existing_pr"
+          else
+            gh pr create \
+              --base "${{ env.TARGET_BRANCH }}" \
+              --head "${{ env.SYNC_BRANCH }}" \
+              --title "sync: merge upstream main into main" \
+              --body-file pr_body.md
+          fi
