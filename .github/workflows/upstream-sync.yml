@@ -31,7 +31,7 @@ env:
 
   # 固定同步分支
   # 每次同步都会更新这个分支，不会创建一堆新分支
-  SYNC_BRANCH: sync/upstream-main
+  SYNC_BRANCH: sync/main
 
 jobs:
   sync:
@@ -128,7 +128,7 @@ jobs:
 
           Source: https://github.com/Wei-Shaw/sub2api/tree/main
           Target: main
-          Sync branch: sync/upstream-main
+          Sync branch: sync/main
 
           如果本次同步出现冲突，工作流会失败，需要人工处理冲突后再合并。
           EOF
