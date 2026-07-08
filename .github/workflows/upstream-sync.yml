@@ -1,49 +1,84 @@
+# 工作流名称，会显示在 GitHub Actions 页面
 name: Sync Upstream Main To Main
 
+# 触发方式
 on:
+  # 允许你在 GitHub Actions 页面手动点击运行
   workflow_dispatch:
+
+  # 定时运行
   schedule:
+    # 每天 UTC 02:00 运行
+    # 台北/北京时间是 UTC+8，所以是每天 10:00
     - cron: "0 2 * * *"
 
+# GitHub Actions 默认 token 的权限
+# 注意：这里仍建议使用 SYNC_PAT，因为默认 github.token 不能修改 workflow 文件
 permissions:
+  # 允许读写代码内容
   contents: write
+
+  # 允许创建和读取 PR
   pull-requests: write
 
+# 全局环境变量，下面步骤都可以使用
 env:
+  # 开源项目地址，也就是你要同步的上游仓库
   UPSTREAM_REPO: https://github.com/Wei-Shaw/sub2api.git
+
+  # 你自己仓库中要同步到的目标分支
   TARGET_BRANCH: main
+
+  # 固定同步分支
+  # 每次同步都会更新这个分支，不会创建一堆新分支
   SYNC_BRANCH: sync/upstream-main
 
 jobs:
   sync:
+    # 使用 GitHub 托管的 Ubuntu 环境运行
     runs-on: ubuntu-latest
 
     steps:
+      # 拉取你当前仓库的目标分支
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
+          # 拉取 main 分支
           ref: ${{ env.TARGET_BRANCH }}
+
+          # 拉取完整 git 历史，否则 merge / diff 可能不准确
           fetch-depth: 0
+
+          # 使用你配置的 PAT
+          # 需要有 Contents / Pull requests / Workflows 写权限
           token: ${{ secrets.SYNC_PAT }}
 
+      # 配置 git 提交身份
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      # 添加 upstream 远程仓库，并拉取 upstream/main 和 origin/main
       - name: Add upstream and fetch branches
         run: |
           git remote add upstream ${{ env.UPSTREAM_REPO }}
           git fetch upstream main
           git fetch origin ${{ env.TARGET_BRANCH }}
 
+      # 创建/重置固定同步分支，并把 upstream/main 合并进来
       - name: Merge upstream main
         id: merge
         continue-on-error: true
         run: |
+          # 基于当前 origin/main 创建或重置同步分支
           git checkout -B ${{ env.SYNC_BRANCH }} origin/${{ env.TARGET_BRANCH }}
+
+          # 合并 upstream/main
+          # --allow-unrelated-histories 用于第一次同步两个没有共同历史的仓库
           git merge upstream/main --no-edit --allow-unrelated-histories
 
+      # 如果 merge 失败，打印冲突文件，方便你定位
       - name: Show merge conflicts
         if: steps.merge.outcome == 'failure'
         run: |
@@ -53,12 +88,15 @@ jobs:
           echo "Unmerged files:"
           git diff --name-only --diff-filter=U
 
+      # 如果有冲突，停止 workflow
+      # 这里不自动推送半冲突状态，避免污染远程分支
       - name: Stop on merge conflicts
         if: steps.merge.outcome == 'failure'
         run: |
-          echo "Upstream merge has conflicts. Please resolve them manually on the sync branch."
+          echo "Upstream merge has conflicts. Please resolve them manually."
           exit 1
 
+      # 判断同步分支相对 main 是否真的有变化
       - name: Check whether sync branch has changes
         id: changes
         run: |
@@ -70,6 +108,7 @@ jobs:
             echo "Upstream changes detected."
           fi
 
+      # 如果有变化，把同步分支推送到你的仓库
       - name: Push sync branch
         if: steps.changes.outputs.has_changes == 'true'
         env:
@@ -78,6 +117,7 @@ jobs:
           git remote set-url origin https://x-access-token:${SYNC_PAT}@github.com/${{ github.repository }}.git
           git push --force-with-lease origin HEAD:${{ env.SYNC_BRANCH }}
 
+      # 创建或复用 PR
       - name: Create or reuse pull request to main
         if: steps.changes.outputs.has_changes == 'true'
         env:
